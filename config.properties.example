@@ -1,0 +1,24 @@
+
+
+# Telegram Bot Token
+
+BOT_TOKEN=123456789:8358363534:AAFc83kgadp8xRirRi_OTt23Eyxif1CSNs4
+
+# Telegram Bot Username
+BOT_USERNAME=craccotradingbot
+
+# Alpha Vantage API Configuration
+# Registrati gratuitamente su: https://www.alphavantage.co/support/#api-key
+
+ALPHA_VANTAGE_API_KEY=0B8S3B55M0PYTX1D
+
+# Database Configuration
+DB_PATH=trading_bot.db
+
+# Trading Simulation Settings
+INITIAL_VIRTUAL_BALANCE=10000.00
+DEFAULT_CURRENCY=USD
+```
+
+
+

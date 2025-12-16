@@ -11,6 +11,7 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.IOException;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -318,23 +319,94 @@ public class TradingBot extends TelegramLongPollingBot {
 
     private String getPortfolio(long userId) {
         try {
-            // Ottieni tutti i simboli nel portfolio dell'utente
-            String portfolioData = db.getPortfolio(userId, new HashMap<>());
+            // Prima ottieni i simboli nel portfolio
+            Map<String, Double> currentPrices = new HashMap<>();
 
-            if (portfolioData.contains("Portfolio vuoto")) {
-                return portfolioData;
+            // Query per ottenere tutti i simboli nel portfolio
+            String symbolQuery = "SELECT DISTINCT symbol FROM portfolio WHERE user_id = ?";
+            try (var conn = db.getConnection();
+                 var pstmt = conn.prepareStatement(symbolQuery)) {
+                pstmt.setLong(1, userId);
+                var rs = pstmt.executeQuery();
+
+                while (rs.next()) {
+                    String symbol = rs.getString("symbol");
+                    try {
+                        double price = api.getCurrentPrice(symbol);
+                        currentPrices.put(symbol, price);
+                    } catch (IOException e) {
+                        System.err.println("Errore recupero prezzo per " + symbol + ": " + e.getMessage());
+                        // Continua con gli altri simboli
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Errore query simboli: " + e.getMessage());
             }
 
-            // Estrai i simboli e ottieni i prezzi correnti
-            // Questo è semplificato - in produzione dovresti ottimizzare
-            Map<String, Double> currentPrices = new HashMap<>();
-            // Per ora ritorna il portfolio con prezzi cached o richiedi manualmente
+            // Se non abbiamo prezzi, usa un portfolio semplificato
+            if (currentPrices.isEmpty()) {
+                // Verifica se il portfolio è veramente vuoto
+                String checkQuery = "SELECT COUNT(*) as count FROM portfolio WHERE user_id = ?";
+                try (var conn = db.getConnection();
+                     var pstmt = conn.prepareStatement(checkQuery)) {
+                    pstmt.setLong(1, userId);
+                    var rs = pstmt.executeQuery();
+                    if (rs.next() && rs.getInt("count") == 0) {
+                        return "📊 Portfolio vuoto. Inizia a investire con /compra!";
+                    }
+                }
+
+                return getPortfolioWithoutPrices(userId);
+            }
 
             return db.getPortfolio(userId, currentPrices);
 
         } catch (Exception e) {
             return "❌ Errore nel recupero del portfolio: " + e.getMessage();
         }
+    }
+
+    private String getPortfolioWithoutPrices(long userId) {
+        String sql = "SELECT symbol, quantity, avg_buy_price, total_invested FROM portfolio WHERE user_id = ?";
+        StringBuilder result = new StringBuilder("📊 IL TUO PORTFOLIO:\n\n");
+        double totalInvested = 0;
+
+        try (var conn = db.getConnection();
+             var pstmt = conn.prepareStatement(sql)) {
+            pstmt.setLong(1, userId);
+            var rs = pstmt.executeQuery();
+
+            boolean hasStocks = false;
+            while (rs.next()) {
+                hasStocks = true;
+                String symbol = rs.getString("symbol");
+                double quantity = rs.getDouble("quantity");
+                double avgBuyPrice = rs.getDouble("avg_buy_price");
+                double invested = rs.getDouble("total_invested");
+
+                totalInvested += invested;
+
+                result.append(String.format("📌 %s\n", symbol));
+                result.append(String.format("Quantità: %.2f\n", quantity));
+                result.append(String.format("Prezzo medio: $%.2f\n", avgBuyPrice));
+                result.append(String.format("Investito: $%.2f\n\n", invested));
+            }
+
+            if (!hasStocks) {
+                return "📊 Portfolio vuoto. Inizia a investire con /compra!";
+            }
+
+            result.append("━━━━━━━━━━━━━━━━━━━━\n");
+            result.append(String.format("💵 Totale investito: $%.2f\n", totalInvested));
+            result.append(String.format("💳 Cash disponibile: $%.2f\n\n", db.getUserBalance(userId)));
+            result.append("⚠️ Prezzi attuali non disponibili (limite API)\n");
+            result.append("💡 Usa /prezzo [SIMBOLO] per vedere il prezzo corrente");
+
+        } catch (Exception e) {
+            return "❌ Errore nel recupero del portfolio: " + e.getMessage();
+        }
+
+        return result.toString();
     }
 
     private String getBalance(long userId) {

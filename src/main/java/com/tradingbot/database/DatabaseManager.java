@@ -495,6 +495,10 @@ public class DatabaseManager {
         return "Errore nel recupero delle statistiche";
     }
 
+    public Connection getConnection() {
+        return connection;
+    }
+
     public void close() {
         try {
             if (connection != null && !connection.isClosed()) {
